@@ -150,15 +150,6 @@ namespace valhalla {
         midgard::logging::Log("#_passes::2", " [ANALYTICS] ");
         path_edges = path_algorithm->GetBestPath(origin, destination,
                                   reader, mode_costing, mode);
-
-        // 3rd pass (only for A*)
-        if (path_edges.size() == 0 && using_astar) {
-          path_algorithm->Clear();
-          cost->DisableHighwayTransitions();
-          midgard::logging::Log("#_passes::3", " [ANALYTICS] ");
-          path_edges = path_algorithm->GetBestPath(origin, destination,
-                                   reader, mode_costing, mode);
-        }
       }
     }
   }
