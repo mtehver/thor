@@ -76,7 +76,6 @@ void MultiModalPathAlgorithm::Init(const PointLL& origll,
 
   // Get hierarchy limits from the costing. Get a copy since we increment
   // transition counts (i.e., this is not a const reference).
-  allow_transitions_ = costing->AllowTransitions();
   hierarchy_limits_  = costing->GetHierarchyLimits();
 }
 
@@ -279,19 +278,24 @@ std::vector<PathInfo> MultiModalPathAlgorithm::GetBestPath(
     uint32_t shortcuts = 0;
     GraphId edgeid(node.tileid(), node.level(), nodeinfo->edge_index());
     const DirectedEdge* directededge = tile->directededge(nodeinfo->edge_index());
-
-    for (uint32_t i = 0, n = nodeinfo->edge_count(); i < n;
-                i++, directededge++, edgeid++) {
-      // Skip transition edges for now. Should not see any shortcuts since we
-      // never transition upwards.
-      if (directededge->trans_up() || directededge->trans_down()) {
-        continue;
-      }
-
+    for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
       // Get the current set. Skip this edge if permanently labeled (best
       // path already found to this directed edge).
       EdgeStatusInfo edgestatus = edgestatus_->Get(edgeid);
       if (edgestatus.set() == EdgeSet::kPermanent) {
+        continue;
+      }
+
+      if (directededge->trans_up() || directededge->trans_down()) {
+        // Add the transition edge to the adjacency list and edge labels
+        // using the predecessor information. Transition edges have
+        // no length.
+        AddToAdjacencyList(edgeid, pred.sortcost());
+        edgelabels_.emplace_back(predindex, edgeid, directededge,
+                pred.cost(),pred.sortcost(), pred.distance(), pred.restrictions(),
+                pred.opp_local_idx(), mode_, pred.path_distance(),
+                pred.tripid(), pred.prior_stopid(), pred.blockid(),
+                pred.transit_operator(), pred.has_transit());
         continue;
       }
 
@@ -558,19 +562,29 @@ bool MultiModalPathAlgorithm::CanReachDestination(const PathLocation& destinatio
     // Expand edges from the node
     GraphId edgeid(node.tileid(), node.level(), nodeinfo->edge_index());
     const DirectedEdge* directededge = tile->directededge(nodeinfo->edge_index());
-    for (uint32_t i = 0, n = nodeinfo->edge_count(); i < n;
-                i++, directededge++, edgeid++) {
-
-      // Skip transition edges or if not allowed for htis mode
-      if (directededge->trans_up() || directededge->trans_down() ||
-          !costing->Allowed(directededge, pred, tile, edgeid)) {
-        continue;
-      }
-
+    for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
       // Get the current set. Skip this edge if permanently labeled (best
       // path already found to this directed edge).
       EdgeStatusInfo es = edgestatus.Get(edgeid);
       if (es.set() == EdgeSet::kPermanent) {
+        continue;
+      }
+
+      // Handle transition edges
+      if (directededge->trans_up() || directededge->trans_down()) {
+        // Add the transition edge to the adjacency list and edge labels
+        // using the predecessor information.
+        edgelabels.emplace_back(predindex, edgeid, directededge,
+                pred.cost(), pred.sortcost(), 0.0f, pred.restrictions(),
+                pred.opp_local_idx(), mode_, pred.path_distance());
+        adjlist.add(label_idx, pred.sortcost());
+        edgestatus.Set(edgeid, EdgeSet::kTemporary, label_idx);
+        label_idx++;
+        continue;
+      }
+
+      // Skip if access is not allowed for this mode
+      if (!costing->Allowed(directededge, pred, tile, edgeid)) {
         continue;
       }
 
