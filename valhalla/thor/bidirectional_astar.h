@@ -64,14 +64,14 @@ class BidirectionalAStar : public PathAlgorithm {
   void Clear();
 
  protected:
-  // Allow transitions (set from the costing model)
-  bool allow_transitions_;
-
   // Current travel mode
   sif::TravelMode mode_;
 
   // Current travel type
   uint8_t travel_type_;
+
+  // Current costing mode
+  std::shared_ptr<sif::DynamicCost> costing_;
 
   // Hierarchy limits
   std::vector<sif::HierarchyLimits> hierarchy_limits_forward_;
@@ -104,8 +104,26 @@ class BidirectionalAStar : public PathAlgorithm {
    * @param  destll  Lat,lng of the destination.
    * @param  costing Dynamic costing method.
    */
-  void Init(const PointLL& origll, const PointLL& destll,
-            const std::shared_ptr<sif::DynamicCost>& costing);
+  void Init(const PointLL& origll, const PointLL& destll);
+
+  /**
+   * Expand from the node along the forward search path.
+   */
+  void ExpandForward(baldr::GraphReader& graphreader,
+           const baldr::GraphTile* tile,
+           const baldr::GraphId& node, const baldr::NodeInfo* nodeinfo,
+           sif::EdgeLabel& pred, const uint32_t pred_idx,
+           const bool from_transition);
+
+  /**
+   * Expand from the node along the reverse search path.
+   */
+  void ExpandReverse(baldr::GraphReader& graphreader,
+           const baldr::GraphTile* tile,
+           const baldr::GraphId& node, const baldr::NodeInfo* nodeinfo,
+           sif::EdgeLabel& pred, const uint32_t pred_idx,
+           const baldr::DirectedEdge* opp_pred_edge,
+           const bool from_transition);
 
   /**
    * Add edges at the origin to the forward adjacency list.
@@ -114,8 +132,7 @@ class BidirectionalAStar : public PathAlgorithm {
    * @param  costing      Dynamic costing
    */
   void SetOrigin(baldr::GraphReader& graphreader,
-                 baldr::PathLocation& origin,
-                 const std::shared_ptr<sif::DynamicCost>& costing);
+                 baldr::PathLocation& origin);
 
   /**
    * Add destination edges to the reverse path adjacency list.
@@ -123,8 +140,7 @@ class BidirectionalAStar : public PathAlgorithm {
    * @param   costing      Dynamic costing
    */
   void SetDestination(baldr::GraphReader& graphreader,
-                       const baldr::PathLocation& dest,
-                       const std::shared_ptr<sif::DynamicCost>& costing);
+                       const baldr::PathLocation& dest);
 
   /**
    * Check if the edge on the forward search connects to a reached edge
