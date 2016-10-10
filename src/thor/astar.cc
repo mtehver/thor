@@ -20,7 +20,6 @@ constexpr uint64_t kInitialEdgeLabelCount = 500000;
 AStarPathAlgorithm::AStarPathAlgorithm()
     : mode_(TravelMode::kDrive),
       travel_type_(0),
-      allow_transitions_(false),
       adjacencylist_(nullptr),
       edgestatus_(nullptr),
       tile_creation_date_(0) {
@@ -74,7 +73,6 @@ void AStarPathAlgorithm::Init(const PointLL& origll, const PointLL& destll,
 
   // Get hierarchy limits from the costing. Get a copy since we increment
   // transition counts (i.e., this is not a const reference).
-  allow_transitions_ = costing->AllowTransitions();
   hierarchy_limits_  = costing->GetHierarchyLimits();
 }
 
@@ -130,9 +128,7 @@ std::vector<PathInfo> AStarPathAlgorithm::GetBestPath(PathLocation& origin,
   SetOrigin(graphreader, origin, destination, costing);
 
   // Update hierarchy limits
-  if (allow_transitions_) {
-    ModifyHierarchyLimits(mindist, density);
-  }
+  ModifyHierarchyLimits(mindist, density);
 
   // Find shortest path
   uint32_t nc = 0;       // Count of iterations with no convergence
@@ -212,11 +208,33 @@ std::vector<PathInfo> AStarPathAlgorithm::GetBestPath(PathLocation& origin,
     const DirectedEdge* directededge = tile->directededge(nodeinfo->edge_index());
     for (uint32_t i = 0; i < nodeinfo->edge_count();
                 i++, directededge++, edgeid++) {
+      // Get the current set. Skip this edge if permanently labeled (best
+      // path already found to this directed edge).
+      EdgeStatusInfo edgestatus = edgestatus_->Get(edgeid);
+      if (edgestatus.set() == EdgeSet::kPermanent) {
+        continue;
+      }
+
       // Handle transition edges they either get skipped or added to the
       // adjacency list using the predecessor info
+      // TODO - use a strategy like in bidirectional to immediately expand
+      // from end nodes of transition edges. If we start using A* again we
+      // should do this.
       if (directededge->trans_up() || directededge->trans_down()) {
-        HandleTransitionEdge(level, edgeid, directededge, pred,
+        if (!hierarchy_limits_[directededge->endnode().level()].StopExpanding(dist2dest)) {
+          HandleTransitionEdge(level, edgeid, directededge, pred,
                              predindex, dist2dest);
+        }
+        continue;
+      }
+
+      if (!costing->Allowed(directededge, pred, tile, edgeid)) {
+        continue;
+      }
+
+      // Skip any superseded edges that match the shortcut mask. Also skip
+      // if no access is allowed to this edge (based on costing method)
+      if ((shortcuts & directededge->superseded())) {
         continue;
       }
 
@@ -225,20 +243,6 @@ std::vector<PathInfo> AStarPathAlgorithm::GetBestPath(PathLocation& origin,
       // TODO - configure this distance based on density?
       if (directededge->is_shortcut() && (dist2dest < 10000.0f ||
           directededge->length() > max_shortcut_length)) {
-        continue;
-      }
-
-      // Skip any superseded edges that match the shortcut mask. Also skip
-      // if no access is allowed to this edge (based on costing method)
-      if ((shortcuts & directededge->superseded()) ||
-          !costing->Allowed(directededge, pred, tile, edgeid)) {
-        continue;
-      }
-
-      // Get the current set. Skip this edge if permanently labeled (best
-      // path already found to this directed edge).
-      EdgeStatusInfo edgestatus = edgestatus_->Get(edgeid);
-      if (edgestatus.set() == EdgeSet::kPermanent) {
         continue;
       }
 
@@ -319,15 +323,6 @@ void AStarPathAlgorithm::HandleTransitionEdge(const uint32_t level,
                     const GraphId& edgeid, const DirectedEdge* edge,
                     const EdgeLabel& pred, const uint32_t predindex,
                     const float dist) {
-  // Skip any transition edges that are not allowed.
-  if (!allow_transitions_ ||
-      (edge->trans_up() &&
-       !hierarchy_limits_[level].AllowUpwardTransition(dist)) ||
-      (edge->trans_down() &&
-       !hierarchy_limits_[level].AllowDownwardTransition(dist))) {
-    return;
-  }
-
   // Allow the transition edge. Add it to the adjacency list and edge labels
   // using the predecessor information. Transition edges have no length.
   AddToAdjacencyList(edgeid, pred.sortcost());
