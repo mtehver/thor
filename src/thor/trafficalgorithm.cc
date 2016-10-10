@@ -33,9 +33,6 @@ std::vector<PathInfo> TrafficAlgorithm::GetBestPath(PathLocation& origin,
   mode_ = mode;
   const auto& costing = mode_costing[static_cast<uint32_t>(mode_)];
 
-  // Disable hierarchy transitions
-  allow_transitions_ = false;
-
   // Initialize - create adjacency list, edgestatus support, A*, etc.
   Init(origin.edges.front().projected, destination.edges.front().projected, costing);
   float mindist = astarheuristic_.GetDistance(origin.edges.front().projected);
