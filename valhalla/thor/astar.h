@@ -61,9 +61,6 @@ class AStarPathAlgorithm : public PathAlgorithm {
   virtual void Clear();
 
  protected:
-  // Allow transitions (set from the costing model)
-  bool allow_transitions_;
-
   // Current travel mode
   sif::TravelMode mode_;
 
