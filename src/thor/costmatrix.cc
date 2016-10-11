@@ -267,7 +267,7 @@ void CostMatrix::ExpandForward(GraphReader& graphreader,
     // Check if edge is temporarily labeled and this path has less cost. If
     // less cost the predecessor is updated along with new cost and distance.
     if (edgestatus.set() == EdgeSet::kTemporary) {
-      uint32_t idx = edgestatus.status.index;
+      uint32_t idx = edgestatus.index();
       if (newcost.cost < edgelabels[idx].cost().cost) {
         float oldsortcost = edgelabels[idx].sortcost();
         edgelabels[idx].Update(pred_idx, newcost, newcost.cost, tc, distance);
@@ -384,8 +384,8 @@ void CostMatrix::CheckForwardConnections(const uint32_t source,
       EdgeStatusInfo oppedgestatus = edgestate.Get(oppedge);
       if (oppedgestatus.set() != EdgeSet::kUnreached) {
         const auto& edgelabels = target_edgelabel_[target];
-        uint32_t predidx = edgelabels[oppedgestatus.status.index].predecessor();
-        const EdgeLabel& opp_el = edgelabels[oppedgestatus.status.index];
+        uint32_t predidx = edgelabels[oppedgestatus.index()].predecessor();
+        const EdgeLabel& opp_el = edgelabels[oppedgestatus.index()];
 
         // Special case - common edge for source and target are both initial edges
         if (pred.predecessor() == kInvalidLabel && predidx == kInvalidLabel) {
@@ -553,7 +553,7 @@ void CostMatrix::ExpandReverse(GraphReader& graphreader,
     // Check if edge is temporarily labeled and this path has less cost. If
     // less cost the predecessor is updated along with new cost and distance.
     if (edgestatus.set() != EdgeSet::kUnreached) {
-      uint32_t idx = edgestatus.status.index;
+      uint32_t idx = edgestatus.index();
       if (newcost.cost < edgelabels[idx].cost().cost) {
         float oldsortcost = edgelabels[idx].sortcost();
         edgelabels[idx].Update(pred_idx, newcost, newcost.cost, tc, distance);

@@ -443,7 +443,7 @@ std::vector<PathInfo> MultiModalPathAlgorithm::GetBestPath(
       // by the difference in real cost (A* heuristic doesn't change). Update
       // trip Id and block Id.
       if (edgestatus.set() == EdgeSet::kTemporary) {
-        uint32_t idx = edgestatus.status.index;
+        uint32_t idx = edgestatus.index();
         float dc = edgelabels_[idx].cost().cost - newcost.cost;
         if (dc > 0) {
           float oldsortcost = edgelabels_[idx].sortcost();
@@ -596,7 +596,7 @@ bool MultiModalPathAlgorithm::CanReachDestination(const PathLocation& destinatio
 
       // Check if lower cost path
       if (es.set() == EdgeSet::kTemporary) {
-        uint32_t idx = es.status.index;
+        uint32_t idx = es.index();
         float dc = edgelabels[idx].cost().cost - newcost.cost;
         if (dc > 0) {
           float oldsortcost = edgelabels[idx].sortcost();

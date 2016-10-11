@@ -143,39 +143,20 @@ class BidirectionalAStar : public PathAlgorithm {
                        const baldr::PathLocation& dest);
 
   /**
-   * Check if the edge on the forward search connects to a reached edge
-   * on the reverse search tree.
+   * The edge on the forward search connects to a reached edge on the reverse
+   * search tree. Check if this is the best connection so far and set the
+   * search threshold.
    * @param  pred  Edge label of the predecessor.
    */
-  void CheckForwardConnection(const sif::EdgeLabel& pred);
+  void SetForwardConnection(const sif::EdgeLabel& pred);
 
   /**
-   * Check if the edge on the reverse search connects to a reached edge
-   * on the forward search tree.
+   * The edge on the reverse search connects to a reached edge on the forward
+   * search tree. Check if this is the best connection so far and set the
+   * search threshold.
    * @param  pred  Edge label of the predecessor.
    */
-  void CheckReverseConnection(const sif::EdgeLabel& pred);
-
-  /**
-   * Convenience method to add an edge to the adjacency list and temporarily
-   * label it. This must be called before adding the edge label (so it uses
-   * the correct index).
-   * @param  edgeid    Edge to add to the adjacency list.
-   * @param  sortcost  Sort cost.
-   */
-  void AddToForwardAdjacencyList(const baldr::GraphId& edgeid,
-                                 const float sortcost);
-
-  /**
-   * Convenience method to add an edge to the adjacency list and temporarily
-   * label it. This must be called before adding the edge label (so it uses
-   * the correct index). Adds to the reverse path from destination towards
-   * the origin.
-   * @param  edgeid    Edge to add to the adjacency list.
-   * @param  sortcost  Sort cost.
-   */
-  void AddToReverseAdjacencyList(const baldr::GraphId& edgeid,
-                                 const float sortcost);
+  void SetReverseConnection(const sif::EdgeLabel& pred);
 
   /**
    * Check if edge is temporarily labeled and this path has less cost. If
@@ -190,7 +171,6 @@ class BidirectionalAStar : public PathAlgorithm {
                             const uint32_t predindex,
                             const sif::Cost& newcost,
                             const sif::Cost& tc);
-
 
   /**
    * Check if edge is temporarily labeled and this path has less cost. If

@@ -204,7 +204,7 @@ std::shared_ptr<const GriddedData<PointLL> > Isochrone::Compute(
       // less cost the predecessor is updated and the sort cost is decremented
       // by the difference in real cost (A* heuristic doesn't change)
       if (edgestatus.set() == EdgeSet::kTemporary) {
-        CheckIfLowerCostPath(edgestatus.status.index, predindex, newcost);
+        CheckIfLowerCostPath(edgestatus.index(), predindex, newcost);
         continue;
       }
 
@@ -324,7 +324,7 @@ std::shared_ptr<const GriddedData<PointLL> > Isochrone::ComputeReverse(
       // less cost the predecessor is updated and the sort cost is decremented
       // by the difference in real cost (A* heuristic doesn't change)
       if (edgestatus.set() == EdgeSet::kTemporary) {
-        CheckIfLowerCostPath(edgestatus.status.index, predindex, newcost);
+        CheckIfLowerCostPath(edgestatus.index(), predindex, newcost);
         continue;
       }
 
@@ -634,7 +634,7 @@ std::shared_ptr<const GriddedData<PointLL> > Isochrone::ComputeMultiModal(
       // by the difference in real cost (A* heuristic doesn't change). Update
       // trip Id and block Id.
       if (edgestatus.set() == EdgeSet::kTemporary) {
-        uint32_t idx = edgestatus.status.index;
+        uint32_t idx = edgestatus.index();
         float dc = edgelabels_[idx].cost().cost - newcost.cost;
         if (dc > 0) {
           float oldsortcost = edgelabels_[idx].sortcost();
