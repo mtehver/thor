@@ -108,18 +108,15 @@ void BidirectionalAStar::ExpandForward(GraphReader& graphreader,
   for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
     // Handle transition edges
     if (directededge->trans_up() || directededge->trans_down()) {
-      // Do not take transition edges if this is called from a transition
-      if (from_transition) {
+      // Do not take transition edges if this is called from a transition.
+      // Also skip transition edges onto a level no longer being expanded.
+      if (from_transition || (directededge->trans_down() &&
+          hierarchy_limits_forward_[directededge->endnode().level()].StopExpanding())) {
         continue;
       }
 
-      // Skip opposing transition edges and downward transition onto a
-      // level no longer being expanded.
-      if (directededge->trans_down()) {
-        if (hierarchy_limits_forward_[directededge->endnode().level()].StopExpanding()) {
-          continue;
-        }
-      } else {
+      // Increment upwards transition count
+      if (directededge->trans_up()) {
         hierarchy_limits_forward_[node.level()].up_transition_count++;
       }
 
@@ -139,13 +136,10 @@ void BidirectionalAStar::ExpandForward(GraphReader& graphreader,
       continue;
     }
 
-    // Skip any superseded edges that match the shortcut mask.
-    if ((shortcuts & directededge->superseded())) {
-      continue;
-    }
-
     // Skip if no access is allowed to this edge (based on costing method)
-    if (!costing_->Allowed(directededge, pred, tile, edgeid)) {
+    // or if this is a superseded edge that match the shortcut mask.
+    if (!costing_->Allowed(directededge, pred, tile, edgeid) ||
+        (shortcuts & directededge->superseded())) {
       continue;
     }
 
@@ -207,91 +201,89 @@ void BidirectionalAStar::ExpandReverse(GraphReader& graphreader,
   for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
     // Handle transition edges.
     if (directededge->trans_up() || directededge->trans_down()) {
-      // Do not take transition edges if this is called from a transition
-      if (from_transition) {
+      // Do not take transition edges if this is called from a transition.
+      // Also skip transition edges onto a level no longer being expanded.
+      if (from_transition || (directededge->trans_down() &&
+          hierarchy_limits_reverse_[directededge->endnode().level()].StopExpanding())) {
         continue;
       }
-      if (directededge->trans_down()) {
-        // Skip a transition edge onto a level no longer being expanded
-        if (hierarchy_limits_reverse_[directededge->endnode().level()].StopExpanding()) {
-          continue;
-        }
-      } else {
-        // Increment upward transition count
+
+      // Increment upwards transition count
+      if (directededge->trans_up()) {
         hierarchy_limits_reverse_[node.level()].up_transition_count++;
       }
 
-     // Add the transition edge label then expand from its end node.
-     uint32_t idx = edgelabels_reverse_.size();
-     edgelabels_reverse_.emplace_back(pred_idx, edgeid, pred.opp_edgeid(),
-              directededge, pred.cost(), pred.sortcost(), pred.distance(),
-              pred.restrictions(), pred.opp_local_idx(), mode_,
-              Cost(pred.transition_cost(), pred.transition_secs()),
-              pred.not_thru_pruning());
-     GraphId node = directededge->endnode();
-     const GraphTile* endtile = graphreader.GetGraphTile(node);
-     if (endtile != nullptr) {
-       ExpandReverse(graphreader, endtile, node, endtile->node(node),
-                     edgelabels_reverse_.back(), idx, opp_pred_edge, true);
-     }
-     continue;
-   }
+      // Add the transition edge label then expand from its end node.
+      uint32_t idx = edgelabels_reverse_.size();
+      edgelabels_reverse_.emplace_back(pred_idx, edgeid, pred.opp_edgeid(),
+            directededge, pred.cost(), pred.sortcost(), pred.distance(),
+            pred.restrictions(), pred.opp_local_idx(), mode_,
+            Cost(pred.transition_cost(), pred.transition_secs()),
+            pred.not_thru_pruning());
+      GraphId node = directededge->endnode();
+      const GraphTile* endtile = graphreader.GetGraphTile(node);
+      if (endtile != nullptr) {
+        ExpandReverse(graphreader, endtile, node, endtile->node(node),
+                   edgelabels_reverse_.back(), idx, opp_pred_edge, true);
+      }
+      continue;
+    }
 
-   // Skip edges superseded by a shortcut.
-   if ((shortcuts & directededge->superseded())) {
-     continue;
-   }
+    // Skip edges superseded by a shortcut.
+    if ((shortcuts & directededge->superseded())) {
+      continue;
+    }
 
-   // Get the current set. Skip this edge if permanently labeled (best
-   // path already found to this directed edge).
-   EdgeStatusInfo edgestatus = edgestatus_reverse_->Get(edgeid);
-   if (edgestatus.set() == EdgeSet::kPermanent) {
-     continue;
-   }
+    // Get the current set. Skip this edge if permanently labeled (best
+    // path already found to this directed edge).
+    EdgeStatusInfo edgestatus = edgestatus_reverse_->Get(edgeid);
+    if (edgestatus.set() == EdgeSet::kPermanent) {
+      continue;
+    }
 
-   // Get opposing edge Id and end node tile
-   const GraphTile* t2 = directededge->leaves_tile() ?
+    // Get opposing edge Id and end node tile
+    const GraphTile* t2 = directededge->leaves_tile() ?
         graphreader.GetGraphTile(directededge->endnode()) : tile;
-   if (t2 == nullptr) {
-     continue;
-   }
-   GraphId oppedge = t2->GetOpposingEdgeId(directededge);
+    if (t2 == nullptr) {
+      continue;
+    }
+    GraphId oppedge = t2->GetOpposingEdgeId(directededge);
 
-   // Get opposing directed edge and check if allowed.
-   const DirectedEdge* opp_edge = t2->directededge(oppedge);
-   if (!costing_->AllowedReverse(directededge, pred, opp_edge,
-                                tile, edgeid)) {
-     continue;
-   }
+    // Get opposing directed edge and check if allowed.
+    const DirectedEdge* opp_edge = t2->directededge(oppedge);
+    if (!costing_->AllowedReverse(directededge, pred, opp_edge,
+                              tile, edgeid)) {
+      continue;
+    }
 
-   // Get cost. Use opposing edge for EdgeCost. Update the_shortcuts mask.
-   // Separate the transition seconds so we can properly recover elapsed
-   // time on the reverse path.
-   shortcuts |= directededge->shortcut();
-   Cost tc = costing_->TransitionCostReverse(directededge->localedgeidx(),
-                               nodeinfo, opp_edge, opp_pred_edge);
-   Cost newcost = pred.cost() +
-                  costing_->EdgeCost(opp_edge, nodeinfo->density());
-   newcost.cost += tc.cost;
+    // Get cost. Use opposing edge for EdgeCost. Update the_shortcuts mask.
+    // Separate the transition seconds so we can properly recover elapsed
+    // time on the reverse path.
+    shortcuts |= directededge->shortcut();
+    Cost tc = costing_->TransitionCostReverse(directededge->localedgeidx(),
+                             nodeinfo, opp_edge, opp_pred_edge);
+    Cost newcost = pred.cost() +
+                costing_->EdgeCost(opp_edge, nodeinfo->density());
+    newcost.cost += tc.cost;
 
-   // Check if edge is temporarily labeled and this path has less cost. If
-   // less cost the predecessor is updated and the sort cost is decremented
-   // by the difference in real cost (A* heuristic doesn't change)
-   if (edgestatus.set() != EdgeSet::kUnreached) {
-     CheckIfLowerCostPathReverse(edgestatus.status.index, pred_idx,
-                                 newcost, tc);
-     continue;
-   }
+    // Check if edge is temporarily labeled and this path has less cost. If
+    // less cost the predecessor is updated and the sort cost is decremented
+    // by the difference in real cost (A* heuristic doesn't change)
+    if (edgestatus.set() != EdgeSet::kUnreached) {
+      CheckIfLowerCostPathReverse(edgestatus.status.index, pred_idx,
+                               newcost, tc);
+      continue;
+    }
 
-   // Find the sort cost (with A* heuristic) using the lat,lng at the
-   // end node of the directed edge.
-   float dist = 0.0f;
-   float sortcost = newcost.cost + astarheuristic_reverse_.Get(
+    // Find the sort cost (with A* heuristic) using the lat,lng at the
+    // end node of the directed edge.
+    float dist = 0.0f;
+    float sortcost = newcost.cost + astarheuristic_reverse_.Get(
        t2->node(directededge->endnode())->latlng(), dist);
 
-   // Add edge label, add to the adjacency list and set edge status
-   AddToReverseAdjacencyList(edgeid, sortcost);
-   edgelabels_reverse_.emplace_back(pred_idx, edgeid, oppedge,
+    // Add edge label, add to the adjacency list and set edge status
+    AddToReverseAdjacencyList(edgeid, sortcost);
+    edgelabels_reverse_.emplace_back(pred_idx, edgeid, oppedge,
                  directededge, newcost, sortcost, dist,
                  directededge->restrictions(),
                  directededge->opp_local_idx(), mode_, tc,
