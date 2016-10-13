@@ -181,7 +181,7 @@ class CostMatrix {
    * @param  costing      Costing methods.
    */
   void ForwardSearch(const uint32_t index, const uint32_t n,
-                     baldr::GraphReader& graphreaderg);
+                     baldr::GraphReader& graphreader);
 
   void ExpandForward(baldr::GraphReader& graphreader,
                      const baldr::GraphTile* tile,
