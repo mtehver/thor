@@ -191,8 +191,18 @@ void CostMatrix::Initialize(
   }
 
   // Set the remaining number of sources and targets
-  remaining_sources_ = all_the_same ? 0 : source_count_;
-  remaining_targets_ = all_the_same ? 0 : target_count_;
+  remaining_sources_ = 0;
+  for (auto s : source_status_) {
+    if (!s.remaining_locations.empty()) {
+      remaining_sources_++;
+    }
+  }
+  remaining_targets_ = 0;
+  for (auto t : target_status_) {
+    if (!t.remaining_locations.empty()) {
+      remaining_targets_++;
+    }
+  }
 }
 
 void CostMatrix::ExpandForward(GraphReader& graphreader,
@@ -211,28 +221,26 @@ void CostMatrix::ExpandForward(GraphReader& graphreader,
   for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
     // Handle transition edges
     if (directededge->trans_up() || directededge->trans_down()) {
-      // Do not take transition edges if this is called from a transition
-      if (from_transition) {
+      // Do not take transition edges if this is called from a transition.
+      // Also skip transition edges onto a level no longer being expanded.
+      if (from_transition || (directededge->trans_down() &&
+          hierarchy_limits[directededge->endnode().level()].StopExpanding())) {
         continue;
       }
 
-      // Skip opposing transition edges and downward transition onto a
-      // level no longer being expanded.
-      if (directededge->trans_down()) {
-        if (hierarchy_limits[directededge->endnode().level()].StopExpanding()) {
-          continue;
-        }
-      } else {
+      // Increment upwards transition count
+      if (directededge->trans_up()) {
         hierarchy_limits[node.level()].up_transition_count++;
       }
 
       // Add transition edge label then expand from its end node.
       uint32_t idx = edgelabels.size();
       edgelabels.emplace_back(pred_idx, edgeid, pred.opp_edgeid(),
-               directededge, pred.cost(), pred.sortcost(), pred.distance(),
-               pred.restrictions(), pred.opp_local_idx(), mode_,
-               Cost(pred.transition_cost(), pred.transition_secs()),
-               pred.not_thru_pruning());
+                directededge, pred.cost(), pred.restrictions(),
+                pred.opp_local_idx(), mode_,
+                Cost(pred.transition_cost(), pred.transition_secs()),
+                pred.path_distance(), pred.not_thru_pruning());
+
       GraphId node = directededge->endnode();
       const GraphTile* endtile = graphreader.GetGraphTile(node);
       if (endtile != nullptr) {
@@ -339,20 +347,17 @@ void CostMatrix::ForwardSearch(const uint32_t index, const uint32_t n,
     return;
   }
 
-  // Get the tile and the node info. Skip if tile is null (can happen
-  // with regional data sets) or if no access at the node.
+  // Expand from node in forward search path. Get the tile and the node info.
+  // Skip if tile is null (can happen with regional data sets) or if no access
+  // at the node.
   const GraphTile* tile = graphreader.GetGraphTile(node);
-  if (tile == nullptr) {
-    return;
-  }
-  const NodeInfo* nodeinfo = tile->node(node);
-  if (!costing_->Allowed(nodeinfo)) {
-    return;
-  }
-
-  // Expand from node in forward search path
-  ExpandForward(graphreader, tile, node, nodeinfo, pred, pred_idx,
+  if (tile != nullptr) {
+    const NodeInfo* nodeinfo = tile->node(node);
+    if (costing_->Allowed(nodeinfo)) {
+      ExpandForward(graphreader, tile, node, nodeinfo, pred, pred_idx,
                 hierarchy_limits, edgelabels, edgestate, adj, false);
+    }
+  }
 }
 
 // Check if the edge on the forward search connects to a reached edge
@@ -447,7 +452,7 @@ void CostMatrix::UpdateStatus(const uint32_t source, const uint32_t target) {
       // At least 1 connection has been found to each target for this source.
       // Set a threshold to continue search for a limited number of times.
       source_status_[source].threshold = GetThreshold(mode_,
-             source_edgelabel_[source].size() + target_edgelabel_[target].size());;
+             source_edgelabel_[source].size() + target_edgelabel_[target].size());
     }
   }
 
@@ -460,7 +465,7 @@ void CostMatrix::UpdateStatus(const uint32_t source, const uint32_t target) {
       // At least 1 connection has been found to each source for this target.
       // Set a threshold to continue search for a limited number of times.
       target_status_[target].threshold = GetThreshold(mode_,
-             source_edgelabel_[source].size() + target_edgelabel_[target].size());;
+             source_edgelabel_[source].size() + target_edgelabel_[target].size());
     }
   }
 }
@@ -483,27 +488,25 @@ void CostMatrix::ExpandReverse(GraphReader& graphreader,
   for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++, edgeid++) {
     // Handle transition edges.
     if (directededge->trans_up() || directededge->trans_down()) {
-    // Do not take transition edges if this is called from a transition
-      if (from_transition) {
+      // Do not take transition edges if this is called from a transition.
+      // Also skip transition edges onto a level no longer being expanded.
+      if (from_transition || (directededge->trans_down() &&
+          hierarchy_limits[directededge->endnode().level()].StopExpanding())) {
         continue;
       }
-      if (directededge->trans_down()) {
-        // Skip a transition edge onto a level no longer being expanded
-        if (hierarchy_limits[directededge->endnode().level()].StopExpanding()) {
-          continue;
-        }
-      } else {
-        // Increment upward transition count
+
+      // Increment upwards transition count
+      if (directededge->trans_up()) {
         hierarchy_limits[node.level()].up_transition_count++;
       }
 
       // Add the transition edge label then expand from its end node.
       uint32_t idx = edgelabels.size();
       edgelabels.emplace_back(pred_idx, edgeid, pred.opp_edgeid(),
-              directededge, pred.cost(), pred.sortcost(), pred.distance(),
-              pred.restrictions(), pred.opp_local_idx(), mode_,
-              Cost(pred.transition_cost(), pred.transition_secs()),
-              pred.not_thru_pruning());
+               directededge, pred.cost(), pred.restrictions(),
+               pred.opp_local_idx(), mode_,
+               Cost(pred.transition_cost(), pred.transition_secs()),
+               pred.path_distance(), pred.not_thru_pruning());
       GraphId node = directededge->endnode();
       const GraphTile* endtile = graphreader.GetGraphTile(node);
       if (endtile != nullptr) {
@@ -605,7 +608,7 @@ void CostMatrix::BackwardSearch(const uint32_t index,
 
   // Prune path if predecessor is not a through edge
   if (pred.not_thru() && pred.not_thru_pruning()) {
-    return;
+    ; // return;
   }
 
   // Get the end node of the prior directed edge. Do not expand on this
@@ -620,28 +623,23 @@ void CostMatrix::BackwardSearch(const uint32_t index,
   // Get the tile and the node info. Skip if tile is null (can happen
   // with regional data sets) or if no access at the node.
   const GraphTile* tile = graphreader.GetGraphTile(node);
-  if (tile == nullptr) {
-    return;
+  if (tile != nullptr) {
+    const NodeInfo* nodeinfo = tile->node(node);
+    if (costing_->Allowed(nodeinfo)) {
+      // Get the opposing predecessor directed edge. Need to make sure we get
+      // the correct one if a transition occurred
+      const DirectedEdge* opp_pred_edge;
+      if (pred.opp_edgeid().Tile_Base() == tile->id().Tile_Base()) {
+        opp_pred_edge = tile->directededge(pred.opp_edgeid().id());
+      } else {
+        opp_pred_edge = graphreader.GetGraphTile(pred.opp_edgeid().
+                         Tile_Base())->directededge(pred.opp_edgeid());
+      }
+      ExpandReverse(graphreader, tile, node, nodeinfo, index, pred,
+                    pred_idx, opp_pred_edge, hierarchy_limits, edgelabels,
+                    edgestate, adj, false);
+    }
   }
-  const NodeInfo* nodeinfo = tile->node(node);
-  if (!costing_->Allowed(nodeinfo)) {
-    return;
-  }
-
-  // Get the opposing predecessor directed edge. Need to make sure we get
-  // the correct one if a transition occurred
-  const DirectedEdge* opp_pred_edge;
-  if (pred.opp_edgeid().Tile_Base() == tile->id().Tile_Base()) {
-    opp_pred_edge = tile->directededge(pred.opp_edgeid().id());
-  } else {
-    opp_pred_edge = graphreader.GetGraphTile(pred.opp_edgeid().
-                     Tile_Base())->directededge(pred.opp_edgeid());
-  }
-
-  // Expand from node in reverse search path
-  ExpandReverse(graphreader, tile, node, nodeinfo, index, edgelabels.back(),
-                pred_idx, opp_pred_edge, hierarchy_limits, edgelabels,
-                edgestate, adj, false);
 }
 
 // Sets the source/origin locations. Search expands forward from these
