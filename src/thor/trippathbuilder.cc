@@ -13,6 +13,7 @@
 #include <valhalla/baldr/graphconstants.h>
 #include <valhalla/midgard/pointll.h>
 #include <valhalla/midgard/logging.h>
+#include "config.h"
 
 using namespace valhalla::baldr;
 using namespace valhalla::midgard;
